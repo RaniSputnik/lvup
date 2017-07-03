@@ -24,18 +24,22 @@ func eventWarrentsReload(event fsnotify.Event) bool {
 	return event.Op == fsnotify.Write || event.Op == fsnotify.Rename || event.Op == fsnotify.Remove
 }
 
-func runLove(projectDir string) context.CancelFunc {
+func runLove(lovePath string, projectDir string) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, "love", projectDir)
+	cmd := exec.CommandContext(ctx, lovePath, projectDir)
 	cmd.Stdout = os.Stdout
 
 	must(cmd.Start())
 	return cancel
 }
 
+// TODO determine default install path for Windows too
+const defaultLovePathOSX = "/Applications/love.app/Contents/MacOS/love"
+
 func main() {
 	logger := log.New(os.Stdout, "SERVER::", 0)
 
+	fLovePath := flag.String("love", defaultLovePathOSX, "optionally specify the path to the love executable")
 	flag.Parse()
 	args := flag.Args()
 
@@ -45,7 +49,7 @@ func main() {
 	}
 
 	dir := args[0]
-	cancel := runLove(dir)
+	cancel := runLove(*fLovePath, dir)
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -61,7 +65,7 @@ func main() {
 				if eventWarrentsReload(event) {
 					cancel()
 					fmt.Println("=====================")
-					cancel = runLove(dir)
+					cancel = runLove(*fLovePath, dir)
 				}
 			case err := <-watcher.Errors:
 				logger.Println("error:", err)
