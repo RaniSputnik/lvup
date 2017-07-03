@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os/exec"
 
 	"os"
 
-	"fmt"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -26,11 +27,15 @@ func eventWarrentsReload(event fsnotify.Event) bool {
 func runLove(projectDir string) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "love", projectDir)
+	cmd.Stdout = os.Stdout
+
 	must(cmd.Start())
 	return cancel
 }
 
 func main() {
+	logger := log.New(os.Stdout, "SERVER::", 0)
+
 	flag.Parse()
 	args := flag.Args()
 
@@ -40,7 +45,6 @@ func main() {
 	}
 
 	dir := args[0]
-	fmt.Printf("%s", dir)
 	cancel := runLove(dir)
 
 	watcher, err := fsnotify.NewWatcher()
@@ -56,17 +60,32 @@ func main() {
 			case event := <-watcher.Events:
 				if eventWarrentsReload(event) {
 					cancel()
+					fmt.Println("=====================")
 					cancel = runLove(dir)
 				}
 			case err := <-watcher.Errors:
-				log.Println("error:", err)
+				logger.Println("error:", err)
 			}
+		}
+	}()
+
+	s := NewServer(logger)
+	err = s.Listen(context.Background(), "localhost:8080")
+	if err != nil {
+		logger.Println("Error listening:", err.Error())
+		os.Exit(1)
+	}
+
+	go func() {
+		for {
+			time.Sleep(time.Second * 3)
+			s.Command(CmdRestart)
 		}
 	}()
 
 	err = watcher.Add(dir)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	<-done
 }
